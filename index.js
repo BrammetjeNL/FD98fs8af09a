@@ -1,12 +1,17 @@
-const { 
-  Client, 
-  GatewayIntentBits, 
-  EmbedBuilder, 
-  ActionRowBuilder, 
-  ButtonBuilder, 
-  ButtonStyle, 
-  PermissionsBitField 
+const {
+  Client,
+  GatewayIntentBits,
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  PermissionsBitField
 } = require("discord.js");
+
+const express = require("express");
+const app = express();
+app.get("/", (req, res) => res.send("Apex Bot Running"));
+app.listen(process.env.PORT || 3000);
 
 const client = new Client({
   intents: [
@@ -18,211 +23,177 @@ const client = new Client({
 
 // ================= CONFIG =================
 const config = {
-  logChannel: "1496935940428664993",
-  supportTicket: "1492640430137802883",
-  buildTicket: "1492640633431523581",
-  spawnerChannel: "1492641221070553178",
+  token: process.env.TOKEN,
 
+  logChannel: "1496935940428664993",
   staffRole: "1474919810881290477",
 
-  roles: {
-    owner: "1474919811325759634",
-    manager: "1474919811325759631",
-    admin: "1474919811304657036",
-    mod: "1474919811304657033",
-    helper: "1474919811304657028"
-  }
+  spawnerChannel: "1492641221070553178"
 };
 
-// ================= DATA STORAGE (SIMPLE RAM) =================
-const userTickets = new Map(); // userId -> count
+// ================= MEMORY =================
+const userTickets = new Map();
+const ticketMessages = new Map();
+
 let spawnerStock = {
   zombie: 5,
   skeleton: 5
 };
 
-// ================= BOT READY =================
-client.once("ready", () => {
+// ================= READY =================
+client.once("clientReady", () => {
   console.log(`Logged in as ${client.user.tag}`);
 
   client.user.setPresence({
-    activities: [{
-      name: "Building with the Apex Building Team.",
-      type: 0
-    }],
+    activities: [{ name: "Building with Apex Team" }],
     status: "online"
   });
 });
 
-// ================= EMBED HELPER =================
-function createEmbed(title, desc, color = 0x2b2d31) {
+// ================= EMBED =================
+function embed(title, desc, color = 0x00aaff) {
   return new EmbedBuilder()
     .setTitle(title)
     .setDescription(desc)
-    .setColor(color)
-    .setFooter({ text: "Apex Building Service :Apex:" });
+    .setColor(color);
 }
 
-// ================= TICKET SYSTEM =================
+// ================= PANEL =================
+async function sendPanel(channel) {
+  const e = embed(
+    "Apex Ticket Center <:Apex:1496924671680057434>",
+    `Welcome!
+
+🎫 Support  
+🏗️ Build Service  
+
+Max 2 tickets per user.`
+  );
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("support")
+      .setLabel("Support Ticket")
+      .setStyle(ButtonStyle.Primary),
+
+    new ButtonBuilder()
+      .setCustomId("build")
+      .setLabel("Build Ticket")
+      .setStyle(ButtonStyle.Success)
+  );
+
+  channel.send({ embeds: [e], components: [row] });
+}
+
+// ================= AI (simple fallback) =================
+function aiReply(msg) {
+  const m = msg.toLowerCase();
+
+  if (m.includes("price")) return "Our prices depend on the build size. Please open a build ticket.";
+  if (m.includes("hello")) return "Hello! How can Apex Building Service help you?";
+  if (m.includes("help")) return "Please describe your issue and our staff will assist you.";
+
+  return "Apex AI: A staff member will respond shortly.";
+}
+
+// ================= TICKETS =================
 async function createTicket(interaction, type) {
   const userId = interaction.user.id;
 
   let count = userTickets.get(userId) || 0;
-  if (count >= 2) {
-    return interaction.reply({ content: "You can only have **2 open tickets** at a time.", ephemeral: true });
-  }
+  if (count >= 2)
+    return interaction.reply({ content: "Max 2 tickets allowed.", flags: 64 });
 
   userTickets.set(userId, count + 1);
 
   const channel = await interaction.guild.channels.create({
-    name: `${type}-ticket-${interaction.user.username}`,
-    type: 0,
+    name: `${type}-${interaction.user.username}`,
     permissionOverwrites: [
-      {
-        id: interaction.guild.id,
-        deny: [PermissionsBitField.Flags.ViewChannel]
-      },
-      {
-        id: interaction.user.id,
-        allow: [
-          PermissionsBitField.Flags.ViewChannel,
-          PermissionsBitField.Flags.SendMessages
-        ]
-      },
-      {
-        id: config.staffRole,
-        allow: [
-          PermissionsBitField.Flags.ViewChannel,
-          PermissionsBitField.Flags.SendMessages
-        ]
-      }
+      { id: interaction.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+      { id: userId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
+      { id: config.staffRole, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
     ]
   });
 
-  const embed = createEmbed(
-    "New Ticket Created :Apex:",
-    `Type: **${type}**\nUser: <@${interaction.user.id}>`
-  );
+  ticketMessages.set(channel.id, []);
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId("close_ticket")
+      .setCustomId("close")
       .setLabel("Close Ticket")
       .setStyle(ButtonStyle.Danger)
   );
 
-  await channel.send({ embeds: [embed], components: [row] });
+  channel.send({
+    embeds: [embed("Ticket Created", `Type: ${type}`)],
+    components: [row]
+  });
 
-  interaction.reply({ content: `Ticket created: ${channel}`, ephemeral: true });
-
-  const log = interaction.guild.channels.cache.get(config.logChannel);
-  if (log) log.send(`🎫 Ticket created by <@${interaction.user.id}> (${type})`);
+  interaction.reply({ content: `Ticket created: ${channel}`, flags: 64 });
 }
 
-// ================= SPWAWNER SYSTEM =================
-function updateSpawnerStatus(guild, item) {
-  const channel = guild.channels.cache.get(config.spawnerChannel);
-  if (!channel) return;
+// ================= TRANSCRIPT =================
+async function createTranscript(channel) {
+  const messages = await channel.messages.fetch({ limit: 50 });
 
-  let status = spawnerStock[item] <= 0 ? "OUT OF STOCK :Skeleton:" : `Stock: ${spawnerStock[item]}`;
+  let html = `<h1>Ticket Transcript - ${channel.name}</h1><br>`;
 
-  const embed = createEmbed(
-    `${item.toUpperCase()} Spawner Shop`,
-    `Status: **${status}**`
-  );
+  messages.reverse().forEach(m => {
+    html += `<p><b>${m.author.tag}:</b> ${m.content}</p>`;
+  });
 
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`buy_${item}`)
-      .setLabel(`Buy ${item}`)
-      .setStyle(ButtonStyle.Success),
-    new ButtonBuilder()
-      .setCustomId(`sell_${item}`)
-      .setLabel(`Sell ${item}`)
-      .setStyle(ButtonStyle.Primary)
-  );
-
-  channel.send({ embeds: [embed], components: [row] });
+  return html;
 }
 
-// ================= INTERACTIONS =================
-client.on("interactionCreate", async interaction => {
-  if (!interaction.isButton()) return;
+// ================= EVENTS =================
+client.on("interactionCreate", async i => {
+  if (!i.isButton()) return;
 
-  // TICKETS
-  if (interaction.customId === "support_ticket") {
-    return createTicket(interaction, "support");
-  }
+  if (i.customId === "support") return createTicket(i, "support");
+  if (i.customId === "build") return createTicket(i, "build");
 
-  if (interaction.customId === "build_ticket") {
-    return createTicket(interaction, "build");
-  }
+  if (i.customId === "close") {
+    const channel = i.channel;
 
-  if (interaction.customId === "close_ticket") {
-    const channel = interaction.channel;
-    await interaction.reply("Closing ticket...");
-    
+    const transcript = await createTranscript(channel);
+
+    const log = i.guild.channels.cache.get(config.logChannel);
+    if (log) {
+      log.send({
+        content: "📄 Ticket Transcript",
+        files: [{ attachment: Buffer.from(transcript), name: "transcript.html" }]
+      });
+    }
+
+    await i.reply({ content: "Closing ticket...", flags: 64 });
+
     setTimeout(() => channel.delete().catch(() => {}), 2000);
-
-    let count = userTickets.get(interaction.user.id) || 1;
-    userTickets.set(interaction.user.id, Math.max(0, count - 1));
-  }
-
-  // SPAWNERS
-  if (interaction.customId.startsWith("buy_")) {
-    const item = interaction.customId.split("_")[1];
-
-    if (spawnerStock[item] <= 0) {
-      return interaction.reply({ content: "Out of stock!", ephemeral: true });
-    }
-
-    spawnerStock[item]--;
-    interaction.reply({ content: `You bought a ${item} spawner! :Apex:` });
-
-    if (spawnerStock[item] === 0) {
-      const ch = interaction.guild.channels.cache.get(config.spawnerChannel);
-      ch.send(`⚠️ ${item.toUpperCase()} is now OUT OF STOCK :Skeleton:`);
-    }
-  }
-
-  if (interaction.customId.startsWith("sell_")) {
-    const item = interaction.customId.split("_")[1];
-
-    spawnerStock[item]++;
-    interaction.reply({ content: `You sold a ${item} spawner!` });
-
-    const ch = interaction.guild.channels.cache.get(config.spawnerChannel);
-    ch.send(`📦 ${item.toUpperCase()} restocked! New stock: ${spawnerStock[item]}`);
   }
 });
 
-// ================= SIMPLE PANEL COMMAND (message trigger) =================
+// ================= AI CHAT IN TICKETS =================
 client.on("messageCreate", async message => {
-  if (message.content === "!panel") {
-    const embed = createEmbed(
-      "Apex Building Service Panel :Apex:",
-      "Choose an option below to open a ticket."
-    );
+  if (message.author.bot) return;
 
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId("support_ticket")
-        .setLabel("Support Ticket")
-        .setStyle(ButtonStyle.Primary),
-      new ButtonBuilder()
-        .setCustomId("build_ticket")
-        .setLabel("Build Service Ticket")
-        .setStyle(ButtonStyle.Success)
-    );
-
-    message.channel.send({ embeds: [embed], components: [row] });
+  if (message.channel.name.includes("support") || message.channel.name.includes("build")) {
+    const reply = aiReply(message.content);
+    message.channel.send(reply);
   }
 
-  if (message.content === "!spawnerpanel") {
-    updateSpawnerStatus(message.guild, "zombie");
-    updateSpawnerStatus(message.guild, "skeleton");
+  if (message.content === "!panel") {
+    sendPanel(message.channel);
+  }
+
+  if (message.content === "!spawner") {
+    const e = embed(
+      "Spawner Shop",
+      `Zombie: ${spawnerStock.zombie}
+Skeleton: ${spawnerStock.skeleton}`
+    );
+
+    message.channel.send({ embeds: [e] });
   }
 });
 
 // ================= LOGIN =================
-client.login(process.env.TOKEN);
+client.login(config.token);
