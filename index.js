@@ -225,4 +225,4 @@ client.on("messageCreate", async message => {
 });
 
 // ================= LOGIN =================
-client.login("YOUR_BOT_TOKEN_HERE");
+client.login(process.env.TOKEN);
