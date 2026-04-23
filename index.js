@@ -93,7 +93,7 @@ function aiReply(msg) {
   if (m.includes("hello")) return "Hello! How can Apex Building Service help you?";
   if (m.includes("help")) return "Please describe your issue and our staff will assist you.";
 
-  return "Apex AI: A staff member will respond shortly.";
+  return "A staff member will respond shortly.";
 }
 
 // ================= TICKETS =================
