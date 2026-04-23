@@ -5,12 +5,14 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  PermissionsBitField
+  PermissionsBitField,
+  StringSelectMenuBuilder
 } = require("discord.js");
 
 const express = require("express");
 const app = express();
-app.get("/", (req, res) => res.send("Apex Bot Running"));
+
+app.get("/", (req, res) => res.send("Apex Bot Online"));
 app.listen(process.env.PORT || 3000);
 
 const client = new Client({
@@ -21,26 +23,22 @@ const client = new Client({
   ]
 });
 
-// ================= CONFIG =================
+// CONFIG
 const config = {
   token: process.env.TOKEN,
-
   logChannel: "1496935940428664993",
-  staffRole: "1474919810881290477",
-
-  spawnerChannel: "1492641221070553178"
+  staffRole: "1474919810881290477"
 };
 
-// ================= MEMORY =================
+// DATA
 const userTickets = new Map();
-const ticketMessages = new Map();
 
 let spawnerStock = {
   zombie: 5,
   skeleton: 5
 };
 
-// ================= READY =================
+// READY
 client.once("clientReady", () => {
   console.log(`Logged in as ${client.user.tag}`);
 
@@ -50,72 +48,84 @@ client.once("clientReady", () => {
   });
 });
 
-// ================= EMBED =================
-function embed(title, desc, color = 0x00aaff) {
+// EMBED
+function embed(title, desc, color = 0xF1C40F) {
   return new EmbedBuilder()
     .setTitle(title)
     .setDescription(desc)
     .setColor(color);
 }
 
-// ================= PANEL =================
-async function sendPanel(channel) {
+// AI SIMPLE
+function ai(msg) {
+  msg = msg.toLowerCase();
+
+  if (msg.includes("price")) return "Prices depend on the build size. Open a build ticket.";
+  if (msg.includes("help")) return "Describe your issue and staff will help you.";
+  if (msg.includes("hello")) return "Hello from Apex Building Service.";
+
+  return "Staff will respond soon.";
+}
+
+// PANEL
+function panel(message) {
   const e = embed(
-    "Apex Ticket Center <:Apex:1496924671680057434>",
-    `Welcome!
-
-🎫 Support  
-🏗️ Build Service  
-
-Max 2 tickets per user.`
+    "Apex Building Service",
+    "Select a category below to create a ticket"
   );
 
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId("support")
-      .setLabel("Support Ticket")
-      .setStyle(ButtonStyle.Primary),
+  const menu = new StringSelectMenuBuilder()
+    .setCustomId("ticket_menu")
+    .setPlaceholder("Select category")
+    .addOptions(
+      { label: "Support", value: "support", emoji: "🎫" },
+      { label: "Build Request", value: "build", emoji: "🏗️" },
+      { label: "Commission", value: "commission", emoji: "💰" },
+      { label: "Revision", value: "revision", emoji: "🔁" },
+      { label: "Partner", value: "partner", emoji: "🤝" },
+      { label: "Giveaway", value: "giveaway", emoji: "🎁" },
+      { label: "Spawner Market", value: "spawner", emoji: "🛒" },
+      { label: "Rank Request", value: "rank", emoji: "👑" }
+    );
 
-    new ButtonBuilder()
-      .setCustomId("build")
-      .setLabel("Build Ticket")
-      .setStyle(ButtonStyle.Success)
-  );
+  const row = new ActionRowBuilder().addComponents(menu);
 
-  channel.send({ embeds: [e], components: [row] });
+  message.channel.send({ embeds: [e], components: [row] });
 }
 
-// ================= AI (simple fallback) =================
-function aiReply(msg) {
-  const m = msg.toLowerCase();
-
-  if (m.includes("price")) return "Our prices depend on the build size. Please open a build ticket.";
-  if (m.includes("hello")) return "Hello! How can Apex Building Service help you?";
-  if (m.includes("help")) return "Please describe your issue and our staff will assist you.";
-
-  return "A staff member will respond shortly.";
-}
-
-// ================= TICKETS =================
+// CREATE TICKET
 async function createTicket(interaction, type) {
-  const userId = interaction.user.id;
+  const user = interaction.user.id;
 
-  let count = userTickets.get(userId) || 0;
+  let count = userTickets.get(user) || 0;
   if (count >= 2)
-    return interaction.reply({ content: "Max 2 tickets allowed.", flags: 64 });
+    return interaction.reply({ content: "Max 2 tickets reached", flags: 64 });
 
-  userTickets.set(userId, count + 1);
+  userTickets.set(user, count + 1);
 
   const channel = await interaction.guild.channels.create({
     name: `${type}-${interaction.user.username}`,
     permissionOverwrites: [
-      { id: interaction.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-      { id: userId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
-      { id: config.staffRole, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
+      {
+        id: interaction.guild.id,
+        deny: [PermissionsBitField.Flags.ViewChannel]
+      },
+      {
+        id: user,
+        allow: [
+          PermissionsBitField.Flags.ViewChannel,
+          PermissionsBitField.Flags.SendMessages
+        ]
+      },
+      {
+        id: config.staffRole,
+        allow: [
+          PermissionsBitField.Flags.ViewChannel,
+          PermissionsBitField.Flags.SendMessages
+        ]
+      }
     ]
   });
-
-  ticketMessages.set(channel.id, []);
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
@@ -125,75 +135,75 @@ async function createTicket(interaction, type) {
   );
 
   channel.send({
-    embeds: [embed("Ticket Created", `Type: ${type}`)],
+    embeds: [embed("Ticket Created", type)],
     components: [row]
   });
 
-  interaction.reply({ content: `Ticket created: ${channel}`, flags: 64 });
+  interaction.reply({ content: "Ticket created", flags: 64 });
 }
 
-// ================= TRANSCRIPT =================
-async function createTranscript(channel) {
-  const messages = await channel.messages.fetch({ limit: 50 });
+// TRANSCRIPT
+async function transcript(channel) {
+  const msgs = await channel.messages.fetch({ limit: 50 });
 
-  let html = `<h1>Ticket Transcript - ${channel.name}</h1><br>`;
+  let html = "";
 
-  messages.reverse().forEach(m => {
-    html += `<p><b>${m.author.tag}:</b> ${m.content}</p>`;
+  msgs.reverse().forEach(m => {
+    html += `${m.author.tag}: ${m.content}\n`;
   });
 
   return html;
 }
 
-// ================= EVENTS =================
+// INTERACTIONS
 client.on("interactionCreate", async i => {
-  if (!i.isButton()) return;
-
-  if (i.customId === "support") return createTicket(i, "support");
-  if (i.customId === "build") return createTicket(i, "build");
-
-  if (i.customId === "close") {
-    const channel = i.channel;
-
-    const transcript = await createTranscript(channel);
-
-    const log = i.guild.channels.cache.get(config.logChannel);
-    if (log) {
-      log.send({
-        content: "📄 Ticket Transcript",
-        files: [{ attachment: Buffer.from(transcript), name: "transcript.html" }]
-      });
+  if (i.isStringSelectMenu()) {
+    if (i.customId === "ticket_menu") {
+      const type = i.values[0];
+      return createTicket(i, type);
     }
+  }
 
-    await i.reply({ content: "Closing ticket...", flags: 64 });
+  if (i.isButton()) {
+    if (i.customId === "close") {
+      const ch = i.channel;
 
-    setTimeout(() => channel.delete().catch(() => {}), 2000);
+      const log = i.guild.channels.cache.get(config.logChannel);
+
+      const file = await transcript(ch);
+
+      if (log) {
+        log.send({
+          content: "Ticket transcript",
+          files: [{ attachment: Buffer.from(file), name: "transcript.txt" }]
+        });
+      }
+
+      i.reply({ content: "Closing", flags: 64 });
+
+      setTimeout(() => ch.delete().catch(() => {}), 2000);
+    }
   }
 });
 
-// ================= AI CHAT IN TICKETS =================
+// MESSAGE
 client.on("messageCreate", async message => {
   if (message.author.bot) return;
 
-  if (message.channel.name.includes("support") || message.channel.name.includes("build")) {
-    const reply = aiReply(message.content);
-    message.channel.send(reply);
-  }
-
   if (message.content === "!panel") {
-    sendPanel(message.channel);
+    panel(message);
   }
 
   if (message.content === "!spawner") {
-    const e = embed(
-      "Spawner Shop",
-      `Zombie: ${spawnerStock.zombie}
-Skeleton: ${spawnerStock.skeleton}`
+    message.channel.send(
+      `Zombie: ${spawnerStock.zombie}\nSkeleton: ${spawnerStock.skeleton}`
     );
+  }
 
-    message.channel.send({ embeds: [e] });
+  if (message.channel.name.includes("support") || message.channel.name.includes("build")) {
+    message.channel.send(ai(message.content));
   }
 });
 
-// ================= LOGIN =================
+// LOGIN
 client.login(config.token);
