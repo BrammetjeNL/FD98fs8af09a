@@ -1,0 +1,13 @@
+{
+  "name": "apex-building-service-bot",
+  "version": "1.0.0",
+  "description": "Apex Building Service Discord Bot",
+  "main": "index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.16.3"
+  }
+}
