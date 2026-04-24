@@ -47,45 +47,31 @@ client.once("clientReady", () => {
 client.on("messageCreate", async message => {
   if (message.author.bot) return;
 
-  // APPLY PANEL
   if (message.content === "!applypanel") {
-
     const embed = new EmbedBuilder()
       .setColor("#E6AF1E")
       .setTitle("Application Menu Apex")
       .setThumbnail("https://cdn.discordapp.com/attachments/1475250183951482880/1496921961555689684/skinmc-avatar.png")
       .setDescription(`
-> Apply here to become a Builder or Staff member. Fill in the form and show us why you’re a great fit.
+> Apply here to become a Builder or Staff member.
 
 - 4 day cooldown
-- Must be 14 years old
+- Must be 14+
       `);
 
     const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId("apply_builder")
-        .setLabel("Builder Apply")
-        .setStyle(ButtonStyle.Primary),
-
-      new ButtonBuilder()
-        .setCustomId("apply_staff")
-        .setLabel("Staff Apply")
-        .setStyle(ButtonStyle.Success),
-
-      new ButtonBuilder()
-        .setCustomId("apply_partner")
-        .setLabel("Partner Apply")
-        .setStyle(ButtonStyle.Danger)
+      new ButtonBuilder().setCustomId("apply_builder").setLabel("Builder Apply").setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId("apply_staff").setLabel("Staff Apply").setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId("apply_partner").setLabel("Partner Apply").setStyle(ButtonStyle.Danger)
     );
 
     message.channel.send({ embeds: [embed], components: [row] });
   }
 
-  // ================= RESET COOLDOWN =================
+  // ================= RESET CD =================
   if (message.content.startsWith("!resetcd")) {
-
     if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-      return message.reply("❌ No permission.");
+      return message.reply("No permission.");
     }
 
     const args = message.content.split(" ");
@@ -94,29 +80,16 @@ client.on("messageCreate", async message => {
 
     if (!user) return message.reply("Mention a user.");
 
-    // reset specifiek type
     if (type) {
-      const key = `${user.id}_${type}`;
-
-      if (cooldowns.has(key)) {
-        cooldowns.delete(key);
-        return message.reply(`✅ Cooldown reset for **${type}** (${user.tag})`);
-      } else {
-        return message.reply("⚠️ No cooldown found for that type.");
-      }
+      cooldowns.delete(`${user.id}_${type}`);
+      return message.reply(`Cooldown reset for ${type}`);
     }
-
-    // reset alles
-    let removed = 0;
 
     for (const key of cooldowns.keys()) {
-      if (key.startsWith(user.id)) {
-        cooldowns.delete(key);
-        removed++;
-      }
+      if (key.startsWith(user.id)) cooldowns.delete(key);
     }
 
-    message.reply(`🔥 Removed ${removed} cooldown(s) for ${user.tag}`);
+    message.reply("All cooldowns removed.");
   }
 });
 
@@ -124,164 +97,160 @@ client.on("messageCreate", async message => {
 const questions = {
   builder: [
     "What is your age?",
-    "How much building experience do you have?",
-    "What is your best build style?",
-    "Why do you want to join Apex Building Team?",
-    "Show us screenshots or portfolio links."
+    "Building experience?",
+    "Best style?",
+    "Why Apex?",
+    "Send portfolio"
   ],
   staff: [
     "What is your age?",
-    "Do you have previous staff experience?",
-    "How active are you daily?",
-    "How would you handle a difficult user?",
-    "Why should we choose you?"
+    "Staff experience?",
+    "Activity?",
+    "Handle toxic users?",
+    "Why you?"
   ],
   partner: [
-    "What is your age?",
-    "Do you have previous partner team experience?",
-    "How many partners can you make weekly?",
-    "Why should we choose you?",
-    "Provide proof or links."
+    "Your server/team?",
+    "Member count?",
+    "Partnership goal?",
+    "Why Apex?",
+    "Proof/links"
   ]
 };
 
 // ================= APPLY =================
 async function startApply(interaction, type) {
   const user = interaction.user;
-
   const key = `${user.id}_${type}`;
-  const last = cooldowns.get(key);
+  const startTime = Date.now();
 
-  if (last && Date.now() - last < 4 * 24 * 60 * 60 * 1000) {
-    return interaction.reply({
-      content: "You must wait 4 days before applying again for this category.",
-      ephemeral: true
-    });
+  if (cooldowns.has(key) && Date.now() - cooldowns.get(key) < 4 * 86400000) {
+    return interaction.reply({ content: "Wait 4 days.", ephemeral: true });
   }
 
   cooldowns.set(key, Date.now());
 
-  await interaction.reply({ content: "Check your DMs 📩", ephemeral: true });
+  await interaction.reply({ content: "Check DMs.", ephemeral: true });
 
   const dm = await user.createDM();
   const answers = [];
 
   for (let i = 0; i < questions[type].length; i++) {
-
-    const qEmbed = new EmbedBuilder()
-      .setColor("#E6AF1E")
-      .setTitle(`${type.toUpperCase()} APPLICATION`)
-      .setDescription(`**Question ${i + 1}:**\n${questions[type][i]}`)
-      .setFooter({ text: "Reply within 5 minutes" });
-
-    await dm.send({ embeds: [qEmbed] });
-
-    const collected = await dm.awaitMessages({
-      max: 1,
-      time: 300000
+    await dm.send({
+      embeds: [
+        new EmbedBuilder()
+          .setColor("#E6AF1E")
+          .setTitle(`${type.toUpperCase()} APPLICATION`)
+          .setDescription(`**Q${i + 1}:** ${questions[type][i]}`)
+      ]
     });
 
-    if (!collected.first()) {
-      dm.send({
-        embeds: [
-          new EmbedBuilder()
-            .setColor("Red")
-            .setDescription("❌ Application cancelled (timeout).")
-        ]
+    const collected = await dm.awaitMessages({ max: 1, time: 300000 });
+
+    if (!collected.first()) return;
+
+    const msg = collected.first();
+
+    let answerText = msg.content || "No text";
+
+    if (msg.attachments.size > 0) {
+      msg.attachments.forEach(att => {
+        answerText += `\n[View attachment](${att.url})`;
       });
-      return;
     }
 
-    answers.push(collected.first().content);
+    answers.push(answerText);
   }
 
-  const result = new EmbedBuilder()
+  const guild = interaction.guild;
+  const member = await guild.members.fetch(user.id);
+
+  const duration = Math.floor((Date.now() - startTime) / 1000);
+
+  const stats = `
+**Submission Stats**
+UserId: ${user.id}
+Username: ${user.username}
+User: <@${user.id}>
+Duration: ${duration}s
+Joined: <t:${Math.floor(member.joinedTimestamp / 1000)}:R>
+Submitted: <t:${Math.floor(Date.now() / 1000)}:R>
+`;
+
+  const embed = new EmbedBuilder()
     .setColor("#E6AF1E")
     .setTitle(`${type.toUpperCase()} APPLICATION`)
-    .setDescription(`Applicant: <@${user.id}>`)
+    .setDescription(`Applicant: <@${user.id}>\n\n${stats}`)
+    .setThumbnail(user.displayAvatarURL())
     .addFields(
       answers.map((a, i) => ({
         name: questions[type][i],
         value: a
       }))
-    )
-    .setTimestamp();
+    );
 
   const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`accept_${type}_${user.id}`)
-      .setLabel("Accept")
-      .setStyle(ButtonStyle.Success),
-
-    new ButtonBuilder()
-      .setCustomId(`reject_${type}_${user.id}`)
-      .setLabel("Reject")
-      .setStyle(ButtonStyle.Danger)
+    new ButtonBuilder().setCustomId(`accept_${type}_${user.id}`).setLabel("Accept").setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId(`reject_${type}_${user.id}`).setLabel("Reject").setStyle(ButtonStyle.Danger)
   );
 
   const channel = client.channels.cache.get(config.channels[type]);
-  if (channel) channel.send({ embeds: [result], components: [row] });
+  channel.send({ content: `<@${user.id}>`, embeds: [embed], components: [row] });
 
   dm.send({
-    embeds: [
-      new EmbedBuilder()
-        .setColor("Green")
-        .setDescription("✅ Application submitted successfully!")
-    ]
+    embeds: [new EmbedBuilder().setColor("Green").setDescription("Application submitted!")]
   });
 }
 
 // ================= INTERACTIONS =================
 client.on("interactionCreate", async interaction => {
-
   if (!interaction.isButton()) return;
 
   if (interaction.customId === "apply_builder") return startApply(interaction, "builder");
   if (interaction.customId === "apply_staff") return startApply(interaction, "staff");
   if (interaction.customId === "apply_partner") return startApply(interaction, "partner");
 
-  // ACCEPT
-  if (interaction.customId.startsWith("accept_")) {
-    const [, type, userId] = interaction.customId.split("_");
+  // ACCEPT / REJECT
+  if (interaction.customId.startsWith("accept_") || interaction.customId.startsWith("reject_")) {
+    const [action, type, userId] = interaction.customId.split("_");
 
     const member = await interaction.guild.members.fetch(userId).catch(() => null);
+    const user = await client.users.fetch(userId).catch(() => null);
 
-    if (member) {
+    const accepted = action === "accept";
+
+    if (accepted && member) {
       for (const role of config.roles[type]) {
         await member.roles.add(role).catch(() => {});
       }
     }
 
-    const user = await client.users.fetch(userId).catch(() => null);
     if (user) {
       user.send({
         embeds: [
           new EmbedBuilder()
-            .setColor("Green")
-            .setDescription("✅ Your application has been accepted!")
+            .setColor(accepted ? "Green" : "Red")
+            .setDescription(
+              accepted
+                ? "✅ Your application was accepted!"
+                : "❌ Your application was rejected."
+            )
         ]
       });
     }
 
-    interaction.reply({ content: "Accepted.", ephemeral: true });
-  }
+    // UPDATE EMBED
+    const msg = interaction.message;
+    const embed = EmbedBuilder.from(msg.embeds[0])
+      .setColor(accepted ? "Green" : "Red");
 
-  // REJECT
-  if (interaction.customId.startsWith("reject_")) {
-    const [, , userId] = interaction.customId.split("_");
-
-    const user = await client.users.fetch(userId).catch(() => null);
-    if (user) {
-      user.send({
-        embeds: [
-          new EmbedBuilder()
-            .setColor("Red")
-            .setDescription("❌ Your application has been rejected.")
-        ]
-      });
-    }
-
-    interaction.reply({ content: "Rejected.", ephemeral: true });
+    await interaction.update({
+      content: `<@${userId}>'s submission has been ${
+        accepted ? "accepted" : "rejected"
+      } successfully by <@${interaction.user.id}>`,
+      embeds: [embed],
+      components: []
+    });
   }
 });
 
