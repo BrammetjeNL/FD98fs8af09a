@@ -4,7 +4,8 @@ const {
   EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
-  ButtonStyle
+  ButtonStyle,
+  PermissionsBitField
 } = require("discord.js");
 
 const client = new Client({
@@ -34,7 +35,7 @@ const config = {
   }
 };
 
-// cooldown per type
+// ================= COOLDOWN =================
 const cooldowns = new Map();
 
 // ================= READY =================
@@ -44,6 +45,9 @@ client.once("clientReady", () => {
 
 // ================= PANEL =================
 client.on("messageCreate", async message => {
+  if (message.author.bot) return;
+
+  // APPLY PANEL
   if (message.content === "!applypanel") {
 
     const embed = new EmbedBuilder()
@@ -51,10 +55,10 @@ client.on("messageCreate", async message => {
       .setTitle("Application Menu Apex")
       .setThumbnail("https://cdn.discordapp.com/attachments/1475250183951482880/1496921961555689684/skinmc-avatar.png")
       .setDescription(`
-> Apply here to become a Builder or Staff member.
+> Apply here to become a Builder or Staff member. Fill in the form and show us why you’re a great fit.
 
-• 4 day cooldown per category  
-• Must be 14+  
+- 4 day cooldown
+- Must be 14 years old
       `);
 
     const row = new ActionRowBuilder().addComponents(
@@ -71,10 +75,48 @@ client.on("messageCreate", async message => {
       new ButtonBuilder()
         .setCustomId("apply_partner")
         .setLabel("Partner Apply")
-        .setStyle(ButtonStyle.Danger) // 🔥 kleur toegevoegd
+        .setStyle(ButtonStyle.Danger)
     );
 
     message.channel.send({ embeds: [embed], components: [row] });
+  }
+
+  // ================= RESET COOLDOWN =================
+  if (message.content.startsWith("!resetcd")) {
+
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return message.reply("❌ No permission.");
+    }
+
+    const args = message.content.split(" ");
+    const user = message.mentions.users.first();
+    const type = args[2];
+
+    if (!user) return message.reply("Mention a user.");
+
+    // reset specifiek type
+    if (type) {
+      const key = `${user.id}_${type}`;
+
+      if (cooldowns.has(key)) {
+        cooldowns.delete(key);
+        return message.reply(`✅ Cooldown reset for **${type}** (${user.tag})`);
+      } else {
+        return message.reply("⚠️ No cooldown found for that type.");
+      }
+    }
+
+    // reset alles
+    let removed = 0;
+
+    for (const key of cooldowns.keys()) {
+      if (key.startsWith(user.id)) {
+        cooldowns.delete(key);
+        removed++;
+      }
+    }
+
+    message.reply(`🔥 Removed ${removed} cooldown(s) for ${user.tag}`);
   }
 });
 
@@ -97,8 +139,9 @@ const questions = {
   partner: [
     "What is your age?",
     "Do you have previous partner team experience?",
-    "How much partners can you make in a week?",
+    "How many partners can you make weekly?",
     "Why should we choose you?",
+    "Provide proof or links."
   ]
 };
 
@@ -106,7 +149,6 @@ const questions = {
 async function startApply(interaction, type) {
   const user = interaction.user;
 
-  // cooldown per type
   const key = `${user.id}_${type}`;
   const last = cooldowns.get(key);
 
@@ -130,7 +172,7 @@ async function startApply(interaction, type) {
       .setColor("#E6AF1E")
       .setTitle(`${type.toUpperCase()} APPLICATION`)
       .setDescription(`**Question ${i + 1}:**\n${questions[type][i]}`)
-      .setFooter({ text: "Reply below within 5 minutes" });
+      .setFooter({ text: "Reply within 5 minutes" });
 
     await dm.send({ embeds: [qEmbed] });
 
@@ -140,18 +182,19 @@ async function startApply(interaction, type) {
     });
 
     if (!collected.first()) {
-      dm.send({ embeds: [
-        new EmbedBuilder()
-          .setColor("Red")
-          .setDescription("Application cancelled (timeout).")
-      ]});
+      dm.send({
+        embeds: [
+          new EmbedBuilder()
+            .setColor("Red")
+            .setDescription("❌ Application cancelled (timeout).")
+        ]
+      });
       return;
     }
 
     answers.push(collected.first().content);
   }
 
-  // RESULT EMBED
   const result = new EmbedBuilder()
     .setColor("#E6AF1E")
     .setTitle(`${type.toUpperCase()} APPLICATION`)
@@ -193,7 +236,6 @@ client.on("interactionCreate", async interaction => {
 
   if (!interaction.isButton()) return;
 
-  // APPLY BUTTONS
   if (interaction.customId === "apply_builder") return startApply(interaction, "builder");
   if (interaction.customId === "apply_staff") return startApply(interaction, "staff");
   if (interaction.customId === "apply_partner") return startApply(interaction, "partner");
@@ -226,7 +268,7 @@ client.on("interactionCreate", async interaction => {
 
   // REJECT
   if (interaction.customId.startsWith("reject_")) {
-    const [, type, userId] = interaction.customId.split("_");
+    const [, , userId] = interaction.customId.split("_");
 
     const user = await client.users.fetch(userId).catch(() => null);
     if (user) {
