@@ -12,7 +12,8 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.DirectMessages
+    GatewayIntentBits.DirectMessages,
+    GatewayIntentBits.GuildMembers
   ]
 });
 
@@ -20,13 +21,21 @@ const client = new Client({
 const config = {
   token: process.env.TOKEN,
 
-  builderChannel: "1492285855317098617",
-  staffChannel: "1492285799142785124",
-  partnerChannel: "1492285908547010652"
+  channels: {
+    builder: "1492285855317098617",
+    staff: "1492285799142785124",
+    partner: "1492285908547010652"
+  },
+
+  roles: {
+    staff: ["1474919810881290477", "1474919811304657028"],
+    partner: ["1474919811304657032"],
+    builder: ["1497168316077183006", "1497017296512880770"]
+  }
 };
 
-// cooldown (4 dagen)
-const cooldown = new Map();
+// cooldown per type
+const cooldowns = new Map();
 
 // ================= READY =================
 client.once("clientReady", () => {
@@ -42,11 +51,11 @@ client.on("messageCreate", async message => {
       .setTitle("Application Menu Apex")
       .setThumbnail("https://cdn.discordapp.com/attachments/1475250183951482880/1496921961555689684/skinmc-avatar.png")
       .setDescription(`
-> Apply here to become a Builder or Staff member. Fill in the form and show us why you’re a great fit.
+> Apply here to become a Builder or Staff member.
 
-- 4 day cooldown
-- Must be 14 years old
-`);
+• 4 day cooldown per category  
+• Must be 14+  
+      `);
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
@@ -62,7 +71,7 @@ client.on("messageCreate", async message => {
       new ButtonBuilder()
         .setCustomId("apply_partner")
         .setLabel("Partner Apply")
-        .setStyle(ButtonStyle.Secondary)
+        .setStyle(ButtonStyle.Danger) // 🔥 kleur toegevoegd
     );
 
     message.channel.send({ embeds: [embed], components: [row] });
@@ -93,26 +102,37 @@ const questions = {
   ]
 };
 
-// ================= APPLY SYSTEM =================
+// ================= APPLY =================
 async function startApply(interaction, type) {
   const user = interaction.user;
 
-  // cooldown check
-  const last = cooldown.get(user.id);
+  // cooldown per type
+  const key = `${user.id}_${type}`;
+  const last = cooldowns.get(key);
+
   if (last && Date.now() - last < 4 * 24 * 60 * 60 * 1000) {
-    return interaction.reply({ content: "You must wait 4 days before applying again.", ephemeral: true });
+    return interaction.reply({
+      content: "You must wait 4 days before applying again for this category.",
+      ephemeral: true
+    });
   }
 
-  cooldown.set(user.id, Date.now());
+  cooldowns.set(key, Date.now());
 
-  await interaction.reply({ content: "Check your DMs!", ephemeral: true });
+  await interaction.reply({ content: "Check your DMs 📩", ephemeral: true });
 
   const dm = await user.createDM();
-
   const answers = [];
 
-  for (let q of questions[type]) {
-    await dm.send(`**${q}**`);
+  for (let i = 0; i < questions[type].length; i++) {
+
+    const qEmbed = new EmbedBuilder()
+      .setColor("#E6AF1E")
+      .setTitle(`${type.toUpperCase()} APPLICATION`)
+      .setDescription(`**Question ${i + 1}:**\n${questions[type][i]}`)
+      .setFooter({ text: "Reply below within 5 minutes" });
+
+    await dm.send({ embeds: [qEmbed] });
 
     const collected = await dm.awaitMessages({
       max: 1,
@@ -120,15 +140,19 @@ async function startApply(interaction, type) {
     });
 
     if (!collected.first()) {
-      dm.send("Application cancelled (timeout).");
+      dm.send({ embeds: [
+        new EmbedBuilder()
+          .setColor("Red")
+          .setDescription("Application cancelled (timeout).")
+      ]});
       return;
     }
 
     answers.push(collected.first().content);
   }
 
-  // SEND RESULT
-  const embed = new EmbedBuilder()
+  // RESULT EMBED
+  const result = new EmbedBuilder()
     .setColor("#E6AF1E")
     .setTitle(`${type.toUpperCase()} APPLICATION`)
     .setDescription(`Applicant: <@${user.id}>`)
@@ -142,66 +166,80 @@ async function startApply(interaction, type) {
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId(`accept_${user.id}`)
+      .setCustomId(`accept_${type}_${user.id}`)
       .setLabel("Accept")
       .setStyle(ButtonStyle.Success),
 
     new ButtonBuilder()
-      .setCustomId(`reject_${user.id}`)
+      .setCustomId(`reject_${type}_${user.id}`)
       .setLabel("Reject")
       .setStyle(ButtonStyle.Danger)
   );
 
-  let channelId =
-    type === "builder"
-      ? config.builderChannel
-      : type === "staff"
-      ? config.staffChannel
-      : config.partnerChannel;
+  const channel = client.channels.cache.get(config.channels[type]);
+  if (channel) channel.send({ embeds: [result], components: [row] });
 
-  const channel = client.channels.cache.get(channelId);
-  if (channel) {
-    channel.send({ embeds: [embed], components: [row] });
-  }
-
-  dm.send("Application submitted successfully!");
+  dm.send({
+    embeds: [
+      new EmbedBuilder()
+        .setColor("Green")
+        .setDescription("✅ Application submitted successfully!")
+    ]
+  });
 }
 
 // ================= INTERACTIONS =================
 client.on("interactionCreate", async interaction => {
 
-  if (interaction.isButton()) {
+  if (!interaction.isButton()) return;
 
-    if (interaction.customId === "apply_builder") {
-      return startApply(interaction, "builder");
+  // APPLY BUTTONS
+  if (interaction.customId === "apply_builder") return startApply(interaction, "builder");
+  if (interaction.customId === "apply_staff") return startApply(interaction, "staff");
+  if (interaction.customId === "apply_partner") return startApply(interaction, "partner");
+
+  // ACCEPT
+  if (interaction.customId.startsWith("accept_")) {
+    const [, type, userId] = interaction.customId.split("_");
+
+    const member = await interaction.guild.members.fetch(userId).catch(() => null);
+
+    if (member) {
+      for (const role of config.roles[type]) {
+        await member.roles.add(role).catch(() => {});
+      }
     }
 
-    if (interaction.customId === "apply_staff") {
-      return startApply(interaction, "staff");
+    const user = await client.users.fetch(userId).catch(() => null);
+    if (user) {
+      user.send({
+        embeds: [
+          new EmbedBuilder()
+            .setColor("Green")
+            .setDescription("✅ Your application has been accepted!")
+        ]
+      });
     }
 
-    if (interaction.customId === "apply_partner") {
-      return startApply(interaction, "partner");
+    interaction.reply({ content: "Accepted.", ephemeral: true });
+  }
+
+  // REJECT
+  if (interaction.customId.startsWith("reject_")) {
+    const [, type, userId] = interaction.customId.split("_");
+
+    const user = await client.users.fetch(userId).catch(() => null);
+    if (user) {
+      user.send({
+        embeds: [
+          new EmbedBuilder()
+            .setColor("Red")
+            .setDescription("❌ Your application has been rejected.")
+        ]
+      });
     }
 
-    // ACCEPT / REJECT
-    if (interaction.customId.startsWith("accept_")) {
-      const userId = interaction.customId.split("_")[1];
-
-      interaction.reply({ content: "Application accepted.", ephemeral: true });
-
-      const user = await client.users.fetch(userId).catch(() => null);
-      if (user) user.send("✅ Your application has been accepted!");
-    }
-
-    if (interaction.customId.startsWith("reject_")) {
-      const userId = interaction.customId.split("_")[1];
-
-      interaction.reply({ content: "Application rejected.", ephemeral: true });
-
-      const user = await client.users.fetch(userId).catch(() => null);
-      if (user) user.send("❌ Your application has been rejected.");
-    }
+    interaction.reply({ content: "Rejected.", ephemeral: true });
   }
 });
 
