@@ -4,206 +4,206 @@ const {
   EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
-  ButtonStyle,
-  PermissionsBitField,
-  StringSelectMenuBuilder
+  ButtonStyle
 } = require("discord.js");
-
-const express = require("express");
-const app = express();
-
-app.get("/", (req, res) => res.send("Apex Bot Online"));
-app.listen(process.env.PORT || 3000);
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.DirectMessages
   ]
 });
 
-// CONFIG
+// ================= CONFIG =================
 const config = {
   token: process.env.TOKEN,
-  logChannel: "1496935940428664993",
-  staffRole: "1474919810881290477"
+
+  builderChannel: "1492285855317098617",
+  staffChannel: "1492285799142785124",
+  partnerChannel: "1492285908547010652"
 };
 
-// DATA
-const userTickets = new Map();
+// cooldown (4 dagen)
+const cooldown = new Map();
 
-let spawnerStock = {
-  zombie: 5,
-  skeleton: 5
-};
-
-// READY
+// ================= READY =================
 client.once("clientReady", () => {
   console.log(`Logged in as ${client.user.tag}`);
-
-  client.user.setPresence({
-    activities: [{ name: "Building with Apex Team" }],
-    status: "online"
-  });
 });
 
-// EMBED
-function embed(title, desc, color = 0xF1C40F) {
-  return new EmbedBuilder()
-    .setTitle(title)
-    .setDescription(desc)
-    .setColor(color);
-}
+// ================= PANEL =================
+client.on("messageCreate", async message => {
+  if (message.content === "!applypanel") {
 
-// AI SIMPLE
-function ai(msg) {
-  msg = msg.toLowerCase();
+    const embed = new EmbedBuilder()
+      .setColor("#E6AF1E")
+      .setTitle("Application Menu Apex")
+      .setThumbnail("https://cdn.discordapp.com/attachments/1475250183951482880/1496921961555689684/skinmc-avatar.png")
+      .setDescription(`
+> Apply here to become a Builder or Staff member. Fill in the form and show us why you’re a great fit.
 
-  if (msg.includes("price")) return "Prices depend on the build size. Open a build ticket.";
-  if (msg.includes("help")) return "Describe your issue and staff will help you.";
-  if (msg.includes("hello")) return "Hello from Apex Building Service.";
+- 4 day cooldown
+- Must be 14 years old
+`);
 
-  return "Staff will respond soon.";
-}
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("apply_builder")
+        .setLabel("Builder Apply")
+        .setStyle(ButtonStyle.Primary),
 
-// PANEL
-function panel(message) {
-  const e = embed(
-    "Apex Building Service",
-    "Select a category below to create a ticket"
-  );
+      new ButtonBuilder()
+        .setCustomId("apply_staff")
+        .setLabel("Staff Apply")
+        .setStyle(ButtonStyle.Success),
 
-  const menu = new StringSelectMenuBuilder()
-    .setCustomId("ticket_menu")
-    .setPlaceholder("Select category")
-    .addOptions(
-      { label: "Support", value: "support", emoji: "🎫" },
-      { label: "Build Request", value: "build", emoji: "🏗️" },
-      { label: "Commission", value: "commission", emoji: "💰" },
-      { label: "Revision", value: "revision", emoji: "🔁" },
-      { label: "Partner", value: "partner", emoji: "🤝" },
-      { label: "Giveaway", value: "giveaway", emoji: "🎁" },
-      { label: "Spawner Market", value: "spawner", emoji: "🛒" },
-      { label: "Rank Request", value: "rank", emoji: "👑" }
+      new ButtonBuilder()
+        .setCustomId("apply_partner")
+        .setLabel("Partner Apply")
+        .setStyle(ButtonStyle.Secondary)
     );
 
-  const row = new ActionRowBuilder().addComponents(menu);
+    message.channel.send({ embeds: [embed], components: [row] });
+  }
+});
 
-  message.channel.send({ embeds: [e], components: [row] });
-}
+// ================= QUESTIONS =================
+const questions = {
+  builder: [
+    "What is your age?",
+    "How much building experience do you have?",
+    "What is your best build style?",
+    "Why do you want to join Apex Building Team?",
+    "Show us screenshots or portfolio links."
+  ],
+  staff: [
+    "What is your age?",
+    "Do you have previous staff experience?",
+    "How active are you daily?",
+    "How would you handle a difficult user?",
+    "Why should we choose you?"
+  ],
+  partner: [
+    "What is your age?",
+    "Do you have previous partner team experience?",
+    "How much partners can you make in a week?",
+    "Why should we choose you?",
+  ]
+};
 
-// CREATE TICKET
-async function createTicket(interaction, type) {
-  const user = interaction.user.id;
+// ================= APPLY SYSTEM =================
+async function startApply(interaction, type) {
+  const user = interaction.user;
 
-  let count = userTickets.get(user) || 0;
-  if (count >= 2)
-    return interaction.reply({ content: "Max 2 tickets reached", flags: 64 });
+  // cooldown check
+  const last = cooldown.get(user.id);
+  if (last && Date.now() - last < 4 * 24 * 60 * 60 * 1000) {
+    return interaction.reply({ content: "You must wait 4 days before applying again.", ephemeral: true });
+  }
 
-  userTickets.set(user, count + 1);
+  cooldown.set(user.id, Date.now());
 
-  const channel = await interaction.guild.channels.create({
-    name: `${type}-${interaction.user.username}`,
-    permissionOverwrites: [
-      {
-        id: interaction.guild.id,
-        deny: [PermissionsBitField.Flags.ViewChannel]
-      },
-      {
-        id: user,
-        allow: [
-          PermissionsBitField.Flags.ViewChannel,
-          PermissionsBitField.Flags.SendMessages
-        ]
-      },
-      {
-        id: config.staffRole,
-        allow: [
-          PermissionsBitField.Flags.ViewChannel,
-          PermissionsBitField.Flags.SendMessages
-        ]
-      }
-    ]
-  });
+  await interaction.reply({ content: "Check your DMs!", ephemeral: true });
+
+  const dm = await user.createDM();
+
+  const answers = [];
+
+  for (let q of questions[type]) {
+    await dm.send(`**${q}**`);
+
+    const collected = await dm.awaitMessages({
+      max: 1,
+      time: 300000
+    });
+
+    if (!collected.first()) {
+      dm.send("Application cancelled (timeout).");
+      return;
+    }
+
+    answers.push(collected.first().content);
+  }
+
+  // SEND RESULT
+  const embed = new EmbedBuilder()
+    .setColor("#E6AF1E")
+    .setTitle(`${type.toUpperCase()} APPLICATION`)
+    .setDescription(`Applicant: <@${user.id}>`)
+    .addFields(
+      answers.map((a, i) => ({
+        name: questions[type][i],
+        value: a
+      }))
+    )
+    .setTimestamp();
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId("close")
-      .setLabel("Close Ticket")
+      .setCustomId(`accept_${user.id}`)
+      .setLabel("Accept")
+      .setStyle(ButtonStyle.Success),
+
+    new ButtonBuilder()
+      .setCustomId(`reject_${user.id}`)
+      .setLabel("Reject")
       .setStyle(ButtonStyle.Danger)
   );
 
-  channel.send({
-    embeds: [embed("Ticket Created", type)],
-    components: [row]
-  });
+  let channelId =
+    type === "builder"
+      ? config.builderChannel
+      : type === "staff"
+      ? config.staffChannel
+      : config.partnerChannel;
 
-  interaction.reply({ content: "Ticket created", flags: 64 });
-}
-
-// TRANSCRIPT
-async function transcript(channel) {
-  const msgs = await channel.messages.fetch({ limit: 50 });
-
-  let html = "";
-
-  msgs.reverse().forEach(m => {
-    html += `${m.author.tag}: ${m.content}\n`;
-  });
-
-  return html;
-}
-
-// INTERACTIONS
-client.on("interactionCreate", async i => {
-  if (i.isStringSelectMenu()) {
-    if (i.customId === "ticket_menu") {
-      const type = i.values[0];
-      return createTicket(i, type);
-    }
+  const channel = client.channels.cache.get(channelId);
+  if (channel) {
+    channel.send({ embeds: [embed], components: [row] });
   }
 
-  if (i.isButton()) {
-    if (i.customId === "close") {
-      const ch = i.channel;
+  dm.send("Application submitted successfully!");
+}
 
-      const log = i.guild.channels.cache.get(config.logChannel);
+// ================= INTERACTIONS =================
+client.on("interactionCreate", async interaction => {
 
-      const file = await transcript(ch);
+  if (interaction.isButton()) {
 
-      if (log) {
-        log.send({
-          content: "Ticket transcript",
-          files: [{ attachment: Buffer.from(file), name: "transcript.txt" }]
-        });
-      }
+    if (interaction.customId === "apply_builder") {
+      return startApply(interaction, "builder");
+    }
 
-      i.reply({ content: "Closing", flags: 64 });
+    if (interaction.customId === "apply_staff") {
+      return startApply(interaction, "staff");
+    }
 
-      setTimeout(() => ch.delete().catch(() => {}), 2000);
+    if (interaction.customId === "apply_partner") {
+      return startApply(interaction, "partner");
+    }
+
+    // ACCEPT / REJECT
+    if (interaction.customId.startsWith("accept_")) {
+      const userId = interaction.customId.split("_")[1];
+
+      interaction.reply({ content: "Application accepted.", ephemeral: true });
+
+      const user = await client.users.fetch(userId).catch(() => null);
+      if (user) user.send("✅ Your application has been accepted!");
+    }
+
+    if (interaction.customId.startsWith("reject_")) {
+      const userId = interaction.customId.split("_")[1];
+
+      interaction.reply({ content: "Application rejected.", ephemeral: true });
+
+      const user = await client.users.fetch(userId).catch(() => null);
+      if (user) user.send("❌ Your application has been rejected.");
     }
   }
 });
 
-// MESSAGE
-client.on("messageCreate", async message => {
-  if (message.author.bot) return;
-
-  if (message.content === "!panel") {
-    panel(message);
-  }
-
-  if (message.content === "!spawner") {
-    message.channel.send(
-      `Zombie: ${spawnerStock.zombie}\nSkeleton: ${spawnerStock.skeleton}`
-    );
-  }
-
-  if (message.channel.name.includes("support") || message.channel.name.includes("build")) {
-    message.channel.send(ai(message.content));
-  }
-});
-
-// LOGIN
+// ================= LOGIN =================
 client.login(config.token);
