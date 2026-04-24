@@ -97,24 +97,23 @@ client.on("messageCreate", async message => {
 const questions = {
   builder: [
     "What is your age?",
-    "Building experience?",
-    "Best style?",
-    "Why Apex?",
-    "Send portfolio"
+    "How much building experience do you have?",
+    "What is your best build style?",
+    "Why do you want to join Apex Building Team?",
+    "Show us screenshots or portfolio links."
   ],
   staff: [
     "What is your age?",
-    "Staff experience?",
-    "Activity?",
-    "Handle toxic users?",
-    "Why you?"
+    "Do you have previous staff experience?",
+    "How active are you daily?",
+    "How would you handle a difficult user?",
+    "Why should we choose you?"
   ],
   partner: [
-    "Your server/team?",
-    "Member count?",
-    "Partnership goal?",
-    "Why Apex?",
-    "Proof/links"
+    "What is your age?",
+    "Do you have previous partner team experience?",
+    "How much partners can you make in a week?",
+    "Why should we choose you?",
   ]
 };
 
