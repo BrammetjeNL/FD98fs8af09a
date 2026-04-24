@@ -53,10 +53,10 @@ client.on("messageCreate", async message => {
       .setTitle("Application Menu Apex")
       .setThumbnail("https://cdn.discordapp.com/attachments/1475250183951482880/1496921961555689684/skinmc-avatar.png")
       .setDescription(`
-> Apply here to become a Builder or Staff member.
+> Apply here to become a Builder, Parner or Staff member. Fill in the form and show us why you’re a great fit.
 
 - 4 day cooldown
-- Must be 14+
+- Must be 14 years old
       `);
 
     const row = new ActionRowBuilder().addComponents(
