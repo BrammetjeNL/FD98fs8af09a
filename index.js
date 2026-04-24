@@ -53,10 +53,10 @@ client.on("messageCreate", async message => {
       .setTitle("Application Menu Apex")
       .setThumbnail("https://cdn.discordapp.com/attachments/1475250183951482880/1496921961555689684/skinmc-avatar.png")
       .setDescription(`
-> Apply here to become a Builder, Parner or Staff member. Fill in the form and show us why you’re a great fit.
+> Apply here to become a Builder, Partner or Staff member.
 
 - 4 day cooldown
-- Must be 14 years old
+- Must be 14+
       `);
 
     const row = new ActionRowBuilder().addComponents(
@@ -112,8 +112,8 @@ const questions = {
   partner: [
     "What is your age?",
     "Do you have previous partner team experience?",
-    "How much partners can you make in a week?",
-    "Why should we choose you?",
+    "How many partners can you make weekly?",
+    "Why should we choose you?"
   ]
 };
 
@@ -123,13 +123,16 @@ async function startApply(interaction, type) {
   const key = `${user.id}_${type}`;
   const startTime = Date.now();
 
+  // 🔥 FIX: meteen deferen
+  await interaction.deferReply({ flags: 64 });
+
   if (cooldowns.has(key) && Date.now() - cooldowns.get(key) < 4 * 86400000) {
-    return interaction.reply({ content: "Wait 4 days.", ephemeral: true });
+    return interaction.editReply({ content: "Wait 4 days before applying again." });
   }
 
   cooldowns.set(key, Date.now());
 
-  await interaction.reply({ content: "Check DMs.", ephemeral: true });
+  await interaction.editReply({ content: "Check your DMs 📩" });
 
   const dm = await user.createDM();
   const answers = [];
@@ -149,7 +152,6 @@ async function startApply(interaction, type) {
     if (!collected.first()) return;
 
     const msg = collected.first();
-
     let answerText = msg.content || "No text";
 
     if (msg.attachments.size > 0) {
@@ -209,7 +211,6 @@ client.on("interactionCreate", async interaction => {
   if (interaction.customId === "apply_staff") return startApply(interaction, "staff");
   if (interaction.customId === "apply_partner") return startApply(interaction, "partner");
 
-  // ACCEPT / REJECT
   if (interaction.customId.startsWith("accept_") || interaction.customId.startsWith("reject_")) {
     const [action, type, userId] = interaction.customId.split("_");
 
@@ -238,10 +239,8 @@ client.on("interactionCreate", async interaction => {
       });
     }
 
-    // UPDATE EMBED
     const msg = interaction.message;
-    const embed = EmbedBuilder.from(msg.embeds[0])
-      .setColor(accepted ? "Green" : "Red");
+    const embed = EmbedBuilder.from(msg.embeds[0]).setColor(accepted ? "Green" : "Red");
 
     await interaction.update({
       content: `<@${userId}>'s submission has been ${
@@ -252,6 +251,10 @@ client.on("interactionCreate", async interaction => {
     });
   }
 });
+
+// ================= ERROR HANDLING =================
+client.on("error", console.error);
+process.on("unhandledRejection", console.error);
 
 // ================= LOGIN =================
 client.login(config.token);
